@@ -1,65 +1,42 @@
 provider "google" {
-  credentials = "${file(var.gloud_creds_file)}"
-  project     = "${var.project_name}"
-  region      = "${var.location}"
+ credentials = "${var.gloud_creds_file}"
+ project     = "${var.project_name}"
+ region      = "${var.location}"
+ zone        = "${var.location}-a"
+ version = "~> 2.5"
 }
 
-#resource "google_sql_database_instance" "postgres" {
-#  name = "${var.database_instance_name}"
-#  database_version = "POSTGRES_9_6"
-#  settings {
-#    tier = "db-f1-micro"
-#  }
-#}
-#
-#
-#resource "google_sql_database" "database-prod" {
-#  name      = "prod-db"
-#  instance  = "${google_sql_database_instance.postgres.name}"
-#}
-#
-#resource "google_sql_database" "database-test" {
-#  name      = "test-db"
-#  instance  = "${google_sql_database_instance.postgres.name}"
-#}
-#
-#resource "google_sql_user" "users-prod" {
-#  name     = "postgres"
-#  instance = "${google_sql_database_instance.postgres.name}"
-#  password = "${var.database_prod_user_pass}"
-#}
-#
-#resource "google_sql_user" "users-test" {
-#  name     = "postgres-test"
-#  instance = "${google_sql_database_instance.postgres.name}"
-#  password = "${var.database_test_user_pass}"
-#}
+# // Terraform plugin for creating random ids
+# resource "random_id" "instance_id" {
+#  byte_length = 8
+# }
 
 resource "google_container_cluster" "primary" {
-  name        = "${var.cluster_name}"
-  project     = "${var.project_name}"
-  description = "Demo GKE Cluster"
-  location    = "${var.location}-b"
+  name     = "${var.cluster_name}"
+  location = "${var.location}-a"
+  initial_node_count = "${var.node-count}"
   min_master_version = "${var.kubernetes_ver}"
-
   remove_default_node_pool = true
-  initial_node_count = 1
 
   master_auth {
-    username = "random_id.username.hex"
-    password = "random_id.password.hex"
-  }
-}
+    username = "fds382lkj-2-0kkjlww"
+    password = "rewqr23crwejrr01efew92"
 
-resource "google_container_node_pool" "primary" {
+    client_certificate_config {
+      issue_client_certificate = false
+    }
+  }
+
+}
+  resource "google_container_node_pool" "primary" {
   name       = "${var.cluster_name}-node-pool"
-  project     = "${var.project_name}"
-  location   = "${var.location}-b"
+  project    = "${var.project_name}"
+  location   = "${var.location}-a"
   cluster    = "${google_container_cluster.primary.name}"
-  node_count = 2
+  node_count = "${var.node-count}"
 
   node_config {
-    preemptible  = true
+    preemptible  = false
     machine_type = "${var.machine_type}"
 
     metadata = {
@@ -72,18 +49,35 @@ resource "google_container_node_pool" "primary" {
       "https://www.googleapis.com/auth/logging.write",
       "https://www.googleapis.com/auth/monitoring",
     ]
+    
   }
 }
 
+# output "master_client_certificate" {
+#   value = "${google_container_cluster.primary.master_auth.0.client_certificate}"
+# }
+
+# output "master_client_key" {
+#   value = "${google_container_cluster.primary.master_auth.0.client_key}"
+# }
+
+# output "master_cluster_ca_certificate" {
+#   value = "${google_container_cluster.primary.master_auth.0.cluster_ca_certificate}"
+# }
+output "cluster_ip" {
+  value = "${google_container_cluster.primary.endpoint}"
+}
 
 provider "kubernetes" {
   host = "https://${google_container_cluster.primary.endpoint}"
-  client_certificate = "${base64decode(google_container_cluster.primary.master_auth.0.client_certificate)}"
-  client_key = "${base64decode(google_container_cluster.primary.master_auth.0.client_key)}"
+  # client_certificate = "${base64decode(google_container_cluster.primary.master_auth.0.client_certificate)}"
+  # client_key = "${base64decode(google_container_cluster.primary.master_auth.0.client_key)}"
   cluster_ca_certificate = "${base64decode(google_container_cluster.primary.master_auth.0.cluster_ca_certificate)}"
-  username = "random_id.username.hex"
-  password = "random_id.password.hex"
+
+  username = "${google_container_cluster.primary.master_auth.0.username}"
+  password = "${google_container_cluster.primary.master_auth.0.password}"
 }
+
 
 data "template_file" "kubeconfig" {
   template = "${file("kubeconfig-template.yaml")}"
@@ -98,7 +92,6 @@ data "template_file" "kubeconfig" {
     client_cert_key = "${google_container_cluster.primary.master_auth.0.client_key}"
   }
 }
-
 resource "local_file" "kubeconfig" {
   content  = "${data.template_file.kubeconfig.rendered}"
   filename = "kubeconfig"
@@ -128,11 +121,12 @@ resource "kubernetes_namespace" "jenkins" {
 resource "null_resource" "configure_tiller_jenkins" {
   provisioner "local-exec" {
     command = <<LOCAL_EXEC
-kubectl config use-context ${var.cluster_name} --kubeconfig=${local_file.kubeconfig.filename}
-kubectl apply -f create-helm-service-account.yml --kubeconfig=${local_file.kubeconfig.filename}
-kubectl apply -f create-jenkins-service-account.yml --kubeconfig=${local_file.kubeconfig.filename}
+kubectl config use-context "tf-k8s-gcp-test" --kubeconfig=${local_file.kubeconfig.filename}
+kubectl apply -f helm/create-helm-service-account.yml --kubeconfig=${local_file.kubeconfig.filename}
+kubectl apply -f helm/create-jenkins-service-account.yml --kubeconfig=${local_file.kubeconfig.filename}
 helm init --service-account helm --upgrade --wait --kubeconfig=${local_file.kubeconfig.filename}
-helm install --name jenkins --namespace jenkins -f jenkins-chart.yaml stable/jenkins --wait --kubeconfig=${local_file.kubeconfig.filename}
+helm install --name jenkins --namespace jenkins -f helm/jenkins-chart.yaml stable/jenkins --wait --kubeconfig=${local_file.kubeconfig.filename}
+# get service --namespace jenkins --kubeconfig=kubeconfig
 LOCAL_EXEC
   }
   depends_on = ["google_container_node_pool.primary","local_file.kubeconfig","kubernetes_namespace.jenkins"]

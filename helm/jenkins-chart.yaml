@@ -1,0 +1,58 @@
+master:
+  componentName: jenkins-master
+  image: "jenkins/jenkins"
+master:
+  componentName: jenkins-master
+  image: "jenkins/jenkins"
+  imageTag: "2.189-slim"
+
+  overwriteConfig: true
+
+  adminUser: aDjkaldmin
+  adminPassword: dj!k0d2okdliaulew
+  serviceAccount:
+    create: false
+    name: jenkins-sa
+
+installPlugins:
+    - kubernetes:1.18.1
+    - workflow-aggregator:2.6
+    - workflow-job:2.33
+    - credentials-binding:1.20
+    - git:3.11.0
+    - greenballs:1.15
+    - google-login:1.6
+    - role-strategy:2.13
+    - locale:1.4
+    - ant:1.9
+    - pam-auth:1.5.1
+    - google-oauth-plugin:0.8
+    - google-container-registry-auth
+    # - google-kubernetes-engine:0.6.3
+  #Google OAuth Credentials
+#Google Container Registry Auth Plugin
+
+
+serviceType: LoadBalancer 
+targetPort: 8080
+servicePort: 8080
+
+
+#List of groovy init scripts to be executed during Jenkins master start
+  # initScripts:  
+agent:
+  enabled: true
+  #image: "jenkins/jnlp-slave"
+  image: "jenkins/jnlp-agent-docker"
+  resources:
+    requests:
+      cpu: null
+      memory: null
+    limits:
+      cpu: null
+      memory: null
+  #command: "curl -LO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl && chmod +x ./kubectl && sudo mv ./kubectl /usr/local/bin/kubectl"
+
+#to allow jenkins create slave pods
+rbac:
+  create: true
